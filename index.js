@@ -4,7 +4,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static("public"));
@@ -14,13 +14,13 @@ app.get("/", (req, res) => {
 });
 
 app.post("/api/chat", async (req, res) => {
-    try{
-        const { message } = req.body.message;
+    try {
+        const messages = req.body.messages;
 
-        if (!message || !Array.isArray(message)){
+        if (!messages || !Array.isArray(messages)) {
             return res.status(400).json({
-                 error: "Messages harus  berupa array" 
-                });
+                error: "Messages harus berupa array"
+            });
         }
 
         const response = await fetch(
@@ -34,16 +34,16 @@ app.post("/api/chat", async (req, res) => {
                 },
 
                 body: JSON.stringify({
-                    model: "inclusionai/ling-3,2-flash:free",
-                    messages: message,
+                    model: "openrouter/free",
+                    messages: messages,
                     temperature: 0.7,
                     max_tokens: 1000,
                     stream: true
-                }) 
+                })
             }
         );
 
-        if (!response.ok){
+        if (!response.ok) {
             const errorData = await response.text();
 
             console.error("OpenRouter Error:", errorData);
@@ -63,31 +63,28 @@ app.post("/api/chat", async (req, res) => {
 
         let buffer = "";
 
-        while (true){
+        while (true) {
             const { done, value } = await reader.read();
 
             if (done) {
                 break;
             }
 
-            buffer += decoder.decode(value, { 
-                stream: true 
-            });
+            buffer += decoder.decode(value, { stream: true });
 
             const lines = buffer.split("\n");
 
             // simpan bagian terakhir karena mungkin belum lengkap
             buffer = lines.pop();
 
-            for (const line of lines){
-
+            for (const line of lines) {
                 const trimmedLine = line.trim();
 
                 if (!trimmedLine) {
                     continue;
                 }
 
-                if (!trimmedLine.startsWith("data: ")) {
+                if (!trimmedLine.startsWith("data:")) {
                     continue;
                 }
 
@@ -100,16 +97,13 @@ app.post("/api/chat", async (req, res) => {
                 try {
                     const json = JSON.parse(data);
 
-                    const content = 
-                        json.choices[0].delta.content;
+                    const content = json.choices?.[0]?.delta?.content;
 
                     if (content) {
                         res.write(`data: ${JSON.stringify({ content })}\n\n`);
                     }
                 } catch (error) {
-                    console.error(
-                        "Gagal parsing streaming data:"
-                    );
+                    console.error("Gagal parsing streaming data:", error);
                 }
             }
         }
@@ -125,11 +119,9 @@ app.post("/api/chat", async (req, res) => {
             res.status(500).json({
                 error: "Terjadi kesalahan pada server"
             });
-        }else{
+        } else {
             res.write(
-                `data: ${JSON.stringify(
-                    "Terjadi kesalahan pada server"
-                )}\n\n`
+                `data: ${JSON.stringify({ content: "\n[Terjadi kesalahan pada server]" })}\n\n`
             );
 
             res.end();
@@ -137,6 +129,10 @@ app.post("/api/chat", async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server berjalan di http://localhost:${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Server berjalan di http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;
